@@ -2,7 +2,7 @@
 // This module implements the Arithmetic Logic Unit (ALU) for the CPU.
 // It performs various arithmetic, logical, and shift operations,
 // and generates ARM-like condition flags (N, Z, C, V).
-// CORRECTED: Removed misplaced assignment statements and ensured proper Verilog-2001 structure.
+// CORRECTED: 'operand2_shifted' changed from wire to reg.
 
 module alu (
     input wire [31:0] operand1,      // First operand (e.g., Rn)
@@ -19,11 +19,13 @@ module alu (
     output reg overflow_flag         // Overflow flag (V): for signed arithmetic operations
 );
 
-    // Internal wires for potentially shifted operand2
+    // Internal wire for potentially inverted operand2
     wire [31:0] operand2_shifted_raw; // Operand2 after initial inversion (if any)
-    wire [31:0] operand2_shifted;     // Final operand2 after shifting
 
-    // Internal temporary registers for ALU calculations (moved to module level)
+    // Internal reg for the shifted operand2 - CHANGED FROM WIRE TO REG
+    reg [31:0] operand2_shifted;     // Final operand2 after shifting
+
+    // Internal temporary registers for ALU calculations
     reg [32:0] sum_temp;
     reg [32:0] diff_temp;
     reg [31:0] temp_sub_result;
@@ -34,14 +36,11 @@ module alu (
     // This is used for BIC (~Rm) and for SUB/CMP (effectively adding ~Rm)
     assign operand2_shifted_raw = alu_invert_operand2 ? ~operand2 : operand2;
 
-    // Shifter Logic (combinational)
-    // This block performs the shift operation on operand2_shifted_raw.
+    // Shifter Logic (combinational - uses always block, so operand2_shifted must be reg)
     always @(*) begin
         operand2_shifted = operand2_shifted_raw; // Default: no shift
 
         // Only apply shift if shift_amt is not zero (avoid unnecessary shifts)
-        // ARM shifts by 0 bits are typically no-ops, but for consistency,
-        // we explicitly check shift_amt.
         if (shift_amt != 5'b0) begin
             case (shift_type)
                 2'b00: begin // LSL (Logical Shift Left)
