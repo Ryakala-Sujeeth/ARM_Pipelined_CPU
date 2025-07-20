@@ -26,14 +26,14 @@ This repository contains the Verilog HDL implementation of a 5-stage pipelined C
 The detailed instruction format and opcode definitions for this custom microprocessor are available in the `docs/ISA_Specification.pdf` file.
 
 ## Repository Structure
-
+```
 ARM_Pipelined_CPU/
 ├── src/                    # Contains all Verilog source files for CPU modules
 ├── tb/                     # Contains Verilog test benches
 ├── docs/                   # Documentation, including the ISA specification
 ├── .gitignore              # Specifies files/directories to ignore in Git
 └── README.md               # This README file
-
+```
 
 ## Pipelined Stages Explained
 
