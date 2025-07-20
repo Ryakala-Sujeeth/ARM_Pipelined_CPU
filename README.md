@@ -23,7 +23,7 @@ This repository contains the Verilog HDL implementation of a 5-stage pipelined C
 
 ## ISA Specification
 
-The detailed instruction format and opcode definitions for this custom microprocessor are available in the `docs/ISA_Specification.pdf` file.
+The detailed instruction format and opcode definitions for this custom microprocessor are available in the `Content.pdf` file.
 
 ## Repository Structure
 ```
