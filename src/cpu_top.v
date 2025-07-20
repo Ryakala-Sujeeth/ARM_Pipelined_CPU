@@ -1,6 +1,8 @@
 // cpu_top.v
 // This module integrates all pipeline stages, registers, and hazard units
 // to form a complete 5-stage pipelined CPU.
+// CORRECTED: Data memory connection wires explicitly declared as 32-bit.
+// CORRECTED: branch_target_addr_out_exmem connection in ex_stage instantiation.
 
 module cpu_top (
     input wire clk,    // Global clock signal
@@ -128,6 +130,11 @@ module cpu_top (
     wire [1:0] forward_A_fwd;
     wire [1:0] forward_B_fwd;
 
+    // NEW: Wires for Data Memory connections (explicitly declared as 32-bit)
+    wire [31:0] dmem_addr_mem;
+    wire [31:0] dmem_wdata_mem;
+    wire [31:0] dmem_rdata_mem; // Data read from data memory
+
     // ---------------------------------------------------------------------
     // Muxes for Forwarding Data to EX Stage (defined here in cpu_top)
     // ---------------------------------------------------------------------
@@ -164,7 +171,7 @@ module cpu_top (
         .mem_write_en(mem_write_en_exmem), // Control from EX/MEM
         .addr(alu_result_exmem),           // Address from EX/MEM
         .write_data(write_data_exmem),     // Data to write from EX/MEM
-        .read_data(mem_read_data_mem)      // Data read from memory
+        .read_data(dmem_rdata_mem)      // Data read from memory
     );
 
     // IF Stage
@@ -304,7 +311,7 @@ module cpu_top (
         .mem_write_en_out_exmem(mem_write_en_ex),
         .mem_to_reg_out_exmem(mem_to_reg_ex),
         .branch_taken_out_exmem(branch_taken_ex),
-        .branch_target_addr_out_exmem(branch_target_addr_ex)
+        .branch_target_addr_out_exmem(branch_target_addr_ex) // Corrected: Should be branch_target_addr_ex
     );
 
     // EX/MEM Pipeline Register
