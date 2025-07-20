@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ARM-like 5-Stage Pipelined CPU (Verilog)
 Project Overview
 This repository contains the Verilog HDL implementation of a 5-stage pipelined CPU, designed to execute a subset of an ARM-like instruction set architecture (ISA). This project was developed as part of an undergraduate curriculum to demonstrate the principles of CPU pipelining, hazard detection, and data forwarding.
@@ -147,4 +148,6 @@ Feel free to fork this repository, open issues, or submit pull requests.
 
 Author
 Sujeeth
+=======
+>>>>>>> 33ab0780df22df072d0b9d7b89b08b612f92008b
 
