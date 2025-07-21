@@ -43,26 +43,27 @@ module cpu_top_tb;
     // Use $monitor to display CPU state at each positive clock edge.
     // This will help in debugging and observing pipeline flow.
 
+    // ---------------------------------------------------------------------
+    // Monitoring and Display (CORRECTED)
+    // ---------------------------------------------------------------------
     initial begin
         $dumpfile("cpu_waves.vcd"); // Specify the VCD file for waveform viewing
         $dumpvars(0, cpu_top_tb);   // Dump all variables in the test bench and its hierarchy
 
-        // Example of monitoring key signals (add more as needed for debugging)
-        $monitor("Time=%0t | PC=%h | IF_ID_Instr=%h | ID_EX_PC=%h | EX_ALU_Result=%h | MEM_Read_Data=%h | WB_Write_Data=%h | R1=%h | R2=%h | R3=%h | R4=%h | R5=%h | R6=%h",
-                 $time,
-                 dut.if_s.pc,
-                 dut.if_id_r.instr_out,
-                 dut.id_ex_r.pc_out,
-                 dut.ex_mem_r.alu_result_out,
-                 dut.mem_wb_r.mem_read_data_out,
-                 dut.wb_s.write_data_out_rf,
-                 dut.id_s.reg_file.registers[1],
-                 dut.id_s.reg_file.registers[2],
-                 dut.id_s.reg_file.registers[3],
-                 dut.id_s.reg_file.registers[4],
-                 dut.id_s.reg_file.registers[5],
-                 dut.id_s.reg_file.registers[6]
-                );
+        // CORRECTED: Updated paths to match the revised cpu_top and its sub-modules.
+         $monitor("Time=%0t | PC=%h | IF/ID_Instr=%h | EX_ALU_Result=%h | WB_Write_Data=%h | R1=%h | R2=%h | R3=%h | R4=%h | R5=%h | R6=%h",
+             $time,
+             dut.if_s.pc,                  // Correct path to PC
+             dut.if_id_r.instr_out,        // Correct path to instruction in IF/ID
+             dut.ex_mem_r.alu_result_out,  // Correct path to ALU result in EX/MEM
+             dut.mem_wb_r.write_data_out,  // Correct path to the final data for write-back
+             dut.id_s.reg_file.registers[1], // Correct: R1
+             dut.id_s.reg_file.registers[2], // Correct: R2
+             dut.id_s.reg_file.registers[3], // Correct: R3
+             dut.id_s.reg_file.registers[4], // Correct: R4
+             dut.id_s.reg_file.registers[5], // Correct: R5
+             dut.id_s.reg_file.registers[6]  // Correct: R6
+            );
     end
 
 endmodule
