@@ -1,302 +1,148 @@
 // id_stage.v
-// This module implements the Instruction Decode stage of the pipeline.
-// It decodes the instruction, reads operands from the register file,
-// and generates control signals for subsequent stages.
+// REVISED: Simplified control logic, proper branch handling, and outputting necessary register fields.
 
 module id_stage (
-    input wire clk,             // Clock signal
-    input wire reset,           // Asynchronous reset
-    input wire enable,          // Enable signal for pipeline (e.g., for stalls)
+    input wire clk,
+    input wire reset,
 
-    // Inputs from IF/ID pipeline register
-    input wire [31:0] pc_in_ifid,        // PC value from IF/ID register
-    input wire [31:0] instr_in_ifid,     // Instruction from IF/ID register
+    // Inputs from IF/ID
+    input wire [31:0] instr_in_ifid,
+    input wire [31:0] pc_plus_4_in_ifid,
 
-    // Inputs from WB stage (for write-back to register file)
-    input wire reg_write_en_wb,         // Register write enable from WB stage
-    input wire [3:0] write_reg_addr_wb, // Register address to write to from WB stage
-    input wire [31:0] write_data_wb,    // Data to write from WB stage
+    // Inputs from WB
+    input wire       reg_write_en_wb,
+    input wire [3:0] write_reg_addr_wb,
+    input wire [31:0] write_data_wb,
 
-    // Outputs to IF stage (for branch target)
-    output wire [31:0] branch_target_addr_out_if, // Branch target address to IF stage
-    output wire branch_taken_out_if,             // Branch taken signal to IF stage
+    // Input from Hazard Unit
+    input wire id_ex_nop,
 
-    // Outputs to ID/EX pipeline register
-    output wire [31:0] pc_out_idex,
-    output wire [4:0] opcode_out_idex,
-    output wire [3:0] cond_out_idex,
-    output wire [31:0] read_data1_out_idex,
-    output wire [31:0] read_data2_out_idex,
-    output wire [10:0] imm_out_idex,
-    output wire [3:0] Rd_out_idex,
-    output wire [1:0] shift_type_out_idex, // Shift type for data processing
-    output wire [4:0] shift_amt_out_idex,  // Shift amount for data processing
+    // Outputs to ID/EX Register
+    output reg [31:0] pc_plus_4_out,
+    output reg [31:0] read_data1_out,
+    output reg [31:0] read_data2_out,
+    output reg [31:0] imm_ext_out,
+    output reg [3:0]  rd_out,
+    output reg [3:0]  rn_out,
+    output reg [3:0]  rm_out,
+    output reg [1:0]  shift_type_out,
+    output reg [4:0]  shift_amt_out,
 
-    // Control signals to ID/EX pipeline register
-    output wire reg_write_en_out_idex,
-    output wire mem_read_en_out_idex,
-    output wire mem_write_en_out_idex,
-    output wire alu_src_out_idex,
-    output wire [3:0] alu_op_out_idex, // ALU operation type (now 4-bit)
-    output wire alu_invert_rm_out_idex, // Control: Invert Rm for BIC
-    output wire mem_to_reg_out_idex,
-    output wire branch_taken_out_idex,
-    output wire [31:0] branch_target_addr_out_idex
+    // Control signal outputs
+    output reg reg_write_en_out,
+    output reg mem_read_en_out,
+    output reg mem_write_en_out,
+    output reg mem_to_reg_out,
+    output reg alu_src_out,
+    output reg alu_invert_rm_out,
+    output reg [3:0] alu_op_out,
+    output reg branch_out, // Is the instruction a branch?
+
+    // Outputs to cpu_top for hazard/forwarding units
+    output wire [3:0] rn_ifid_out,
+    output wire [3:0] rm_ifid_out
 );
 
-    // Wires for decoded instruction fields
-    wire [3:0] cond_decoded;
-    wire [4:0] opcode_decoded;
-    wire [3:0] Rn_decoded;
-    wire [3:0] Rm_decoded;
-    wire [3:0] Rd_decoded;
-    wire [10:0] imm_decoded;
-    wire [1:0] shift_type_decoded;
-    wire [4:0] shift_amt_decoded;
+    // --- Instruction Decoding ---
+    wire [4:0] opcode;
+    wire [3:0] Rn, Rm, Rd;
+    wire [10:0] imm;
+    wire [1:0] shift_type;
+    wire [4:0] shift_amt;
 
-    // Instantiate the instruction decoder
     instruction_decoder decoder (
         .instruction(instr_in_ifid),
-        .cond(cond_decoded),
-        .opcode(opcode_decoded),
-        .Rn(Rn_decoded),
-        .Rm(Rm_decoded),
-        .Rd(Rd_decoded),
-        .imm(imm_decoded),
-        .shift_type(shift_type_decoded),
-        .shift_amt(shift_amt_decoded)
+        .cond(), // cond is not used in this simplified model, handled in EX
+        .opcode(opcode),
+        .Rn(Rn),
+        .Rm(Rm),
+        .Rd(Rd),
+        .imm(imm),
+        .shift_type(shift_type),
+        .shift_amt(shift_amt)
     );
 
-    // Wires for data read from register file
-    wire [31:0] reg_read_data1;
-    wire [31:0] reg_read_data2;
+    assign rn_ifid_out = Rn;
+    assign rm_ifid_out = Rm;
 
-    // Instantiate the register file
+    // --- Register File ---
+    wire [31:0] read_data1, read_data2;
+
     register_file reg_file (
         .clk(clk),
         .reset(reset),
-        .reg_write_en(reg_write_en_wb), // Write enable comes from WB stage
-        .write_reg_addr(write_reg_addr_wb), // Write address comes from WB stage
-        .write_data(write_data_wb),     // Write data comes from WB stage
-        .read_reg1_addr(Rn_decoded),    // Read Rn
-        .read_reg2_addr(Rm_decoded),    // Read Rm
-        .read_data1(reg_read_data1),
-        .read_data2(reg_read_data2)
+        .reg_write_en(reg_write_en_wb),
+        .write_reg_addr(write_reg_addr_wb),
+        .write_data(write_data_wb),
+        .read_reg1_addr(Rn),
+        .read_reg2_addr(Rm),
+        .read_data1(read_data1),
+        .read_data2(read_data2)
     );
 
-    // Control Unit Logic (Combinational)
-    // This block determines the control signals based on the decoded opcode.
-    // This is a simplified control unit. A real one would be more complex
-    // and handle all instruction types and their specific requirements.
-
-    // Default control signals
-    reg reg_write_en_ctrl;
-    reg mem_read_en_ctrl;
-    reg mem_write_en_ctrl;
-    reg alu_src_ctrl; // 0: Reg, 1: Imm
-    reg [3:0] alu_op_ctrl; // ALU operation type (now 4-bit)
-    reg alu_invert_rm_ctrl; // Control: Invert Rm for BIC
-    reg mem_to_reg_ctrl; // 0: ALU result, 1: Memory data
-    reg branch_taken_ctrl; // For branch instructions
-    reg [31:0] branch_target_addr_ctrl; // For branch instructions
-
-    // Sign-extend the 11-bit immediate for use in ALU or PC calculation
-    wire [31:0] extended_imm;
-    assign extended_imm = {{21{imm_decoded[10]}}, imm_decoded}; // Sign-extend imm[10:0] to 32 bits
-
-    // Branch target calculation (PC + (signed_offset * 4))
-    // Branch offset is signed and word-aligned (multiplied by 4)
-    assign branch_target_addr_ctrl = pc_in_ifid + (extended_imm << 2); // PC + (offset * 4)
-
+    // --- Control Logic ---
     always @(*) begin
-        // Initialize control signals to default (no operation)
-        reg_write_en_ctrl = 1'b0;
-        mem_read_en_ctrl = 1'b0;
-        mem_write_en_ctrl = 1'b0;
-        alu_src_ctrl = 1'b0; // Default to register source for ALU
-        alu_op_ctrl = 4'b0000;  // Default ALU op (e.g., ADD)
-        alu_invert_rm_ctrl = 1'b0; // Default no inversion
-        mem_to_reg_ctrl = 1'b0; // Default to ALU result for write-back
-        branch_taken_ctrl = 1'b0; // Default no branch
-        // branch_target_addr_ctrl is combinational, already assigned above
+        // Default control signals (for a NOP)
+        reg_write_en_out  = 1'b0;
+        mem_read_en_out   = 1'b0;
+        mem_write_en_out  = 1'b0;
+        mem_to_reg_out    = 1'b0;
+        alu_src_out       = 1'b0;
+        alu_invert_rm_out = 1'b0;
+        alu_op_out        = 4'b0000; // ADD
+        branch_out        = 1'b0;
 
-        case (opcode_decoded)
-            // Data Processing (Register-to-Register)
-            5'b00000: begin // ADD
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn + Rm (shifted)
-                alu_op_ctrl = 4'b0000; // ADD
-                mem_to_reg_ctrl = 1'b0; // Write ALU result
-            end
-            5'b00001: begin // SUB
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn - Rm (shifted)
-                alu_op_ctrl = 4'b0001; // SUB
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b00010: begin // MUL
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn * Rm (shifted)
-                alu_op_ctrl = 4'b0010; // MUL
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b00011: begin // DIV
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn / Rm (shifted)
-                alu_op_ctrl = 4'b0011; // DIV
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b00100: begin // MOD
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn % Rm (shifted)
-                alu_op_ctrl = 4'b0100; // MOD
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b00101: begin // AND
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn & Rm (shifted)
-                alu_op_ctrl = 4'b0101; // AND
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b00110: begin // ORR
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn | Rm (shifted)
-                alu_op_ctrl = 4'b0110; // ORR
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b00111: begin // XOR
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn ^ Rm (shifted)
-                alu_op_ctrl = 4'b0111; // XOR
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b01000: begin // BIC (Bit Clear)
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // Rn & (~Rm) (shifted)
-                alu_op_ctrl = 4'b1000; // BIC (or AND with invert Rm)
-                alu_invert_rm_ctrl = 1'b1; // Invert Rm for this operation
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b01001: begin // MVN (Move Not)
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b0; // ~Rm (shifted) - Rn is ignored
-                alu_op_ctrl = 4'b1001; // MVN (or NOT)
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b01010: begin // CMP (Compare)
-                // No write-back to register, only sets condition flags in ALU
-                alu_src_ctrl = 1'b0; // Rn - Rm (shifted)
-                alu_op_ctrl = 4'b1010; // CMP (SUB for flags)
-            end
-            5'b01011: begin // TST (Test)
-                // No write-back to register, only sets condition flags in ALU
-                alu_src_ctrl = 1'b0; // Rn & Rm (shifted)
-                alu_op_ctrl = 4'b1011; // TST (AND for flags)
-            end
+        if (id_ex_nop) begin
+            // If hazard unit says insert NOP, keep defaults
+        end else begin
+            case (opcode)
+                // Data Processing (Register) [ADD, SUB, MUL, DIV, MOD, AND, ORR, XOR, BIC, MVN, CMP, TST]
+                5'b00000, 5'b00001, 5'b00010, 5'b00011, 5'b00100, 5'b00101, 5'b00110, 5'b00111, 5'b01000, 5'b01001, 5'b01010, 5'b01011: begin
+                    reg_write_en_out  = (opcode == 5'b01010 || opcode == 5'b01011) ? 1'b0 : 1'b1; // No write for CMP/TST
+                    alu_src_out       = 1'b0; // Use register
+                    alu_invert_rm_out = (opcode == 5'b01000); // Invert for BIC
+                    alu_op_out        = {1'b0, opcode[3:0]}; // Map directly from ISA
+                    if (opcode == 5'b01001) alu_op_out = 4'b1001; // MVN
+                    if (opcode == 5'b01010) alu_op_out = 4'b0001; // CMP is SUB
+                    if (opcode == 5'b01011) alu_op_out = 4'b0101; // TST is AND
+                end
+                // Immediate Instructions [MVI, ADDI, SUBI, ANDI, ORI, XORI]
+                5'b01100, 5'b01101, 5'b01110, 5'b01111, 5'b10000, 5'b10001: begin
+                    reg_write_en_out  = 1'b1;
+                    alu_src_out       = 1'b1; // Use immediate
+                    if(opcode == 5'b01100) alu_op_out = 4'b1100; // MVI is pass-through
+                    else alu_op_out = {1'b0, opcode[3:0]}; // Map others directly
+                end
+                // Load/Store Instructions
+                5'b10010: begin // LDR
+                    reg_write_en_out = 1'b1;
+                    mem_read_en_out  = 1'b1;
+                    mem_to_reg_out   = 1'b1;
+                    alu_src_out      = 1'b1; // Address is Rn + Imm
+                    alu_op_out       = 4'b0000; // ADD for address calc
+                end
+                5'b10011: begin // STR
+                    mem_write_en_out = 1'b1;
+                    alu_src_out      = 1'b1; // Address is Rn + Imm
+                    alu_op_out       = 4'b0000; // ADD for address calc
+                end
+                // Branch Instructions
+                5'b10100, 5'b10101, 5'b10110, 5'b10111, 5'b11000: begin
+                    branch_out       = 1'b1;
+                    alu_op_out       = 4'b0001; // Use ALU for comparison (SUB) for conditional branches
+                end
+            endcase
+        end
 
-            // Immediate Instructions
-            5'b01100: begin // MVI (Move Immediate)
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b1; // Use immediate as source
-                alu_op_ctrl = 4'b1100; // MVI (effectively pass-through or ADD with 0)
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b01101: begin // ADDI
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b1; // Rn + Imm
-                alu_op_ctrl = 4'b0000; // ADD
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b01110: begin // SUBI
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b1; // Rn - Imm
-                alu_op_ctrl = 4'b0001; // SUB
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b01111: begin // ANDI
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b1; // Rn & Imm
-                alu_op_ctrl = 4'b0101; // AND
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b10000: begin // ORI
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b1; // Rn | Imm
-                alu_op_ctrl = 4'b0110; // ORR
-                mem_to_reg_ctrl = 1'b0;
-            end
-            5'b10001: begin // XORI
-                reg_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b1; // Rn ^ Imm
-                alu_op_ctrl = 4'b0111; // XOR
-                mem_to_reg_ctrl = 1'b0;
-            end
-
-            // Load/Store Instructions
-            5'b10010: begin // LDR (Load Register)
-                reg_write_en_ctrl = 1'b1;
-                mem_read_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b1; // Rn + Imm (address calculation)
-                alu_op_ctrl = 4'b0000; // ADD for address calculation
-                mem_to_reg_ctrl = 1'b1; // Write memory data
-            end
-            5'b10011: begin // STR (Store Register)
-                mem_write_en_ctrl = 1'b1;
-                alu_src_ctrl = 1'b1; // Rn + Imm (address calculation)
-                alu_op_ctrl = 4'b0000; // ADD for address calculation
-            end
-
-            // Branch Instructions (simplified for now, full condition check in EX)
-            5'b10100: begin // B (Unconditional Branch)
-                branch_taken_ctrl = 1'b1; // Always taken
-            end
-            5'b10101: begin // BEQ (Branch if Equal)
-                // Branch taken depends on condition flags from ALU in EX stage.
-                // For now, we pass the potential branch target.
-                // The actual branch_taken_out_if will be determined by the EX stage.
-            end
-            5'b10110: begin // BNE (Branch if Not Equal)
-                // Similar to BEQ
-            end
-            5'b10111: begin // BLT (Branch if Less Than)
-                // Similar to BEQ
-            end
-            5'b11000: begin // BGT (Branch if Greater Than)
-                // Similar to BEQ
-            end
-            default: begin
-                // No operation, all control signals remain at default (0)
-            end
-        endcase
+        // Pass values to the next stage
+        pc_plus_4_out  = pc_plus_4_in_ifid;
+        read_data1_out = read_data1;
+        read_data2_out = read_data2;
+        imm_ext_out    = {{21{imm[10]}}, imm}; // Sign-extend immediate
+        rd_out         = Rd;
+        rn_out         = Rn;
+        rm_out         = Rm;
+        shift_type_out = shift_type;
+        shift_amt_out  = shift_amt;
     end
-
-    // Outputs to IF stage (for branch prediction/actual branch)
-    // For a simple pipeline, we assume branch is taken here for simplicity
-    // and correct it later with a flush if not taken.
-    // A more sophisticated design would have branch prediction.
-    assign branch_taken_out_if = branch_taken_ctrl; // This will be refined with actual condition flags
-    assign branch_target_addr_out_if = branch_target_addr_ctrl;
-
-    // Outputs to ID/EX pipeline register
-    assign pc_out_idex = pc_in_ifid;
-    assign opcode_out_idex = opcode_decoded;
-    assign cond_out_idex = cond_decoded;
-    assign read_data1_out_idex = reg_read_data1;
-    assign read_data2_out_idex = reg_read_data2;
-    assign imm_out_idex = imm_decoded;
-    assign Rd_out_idex = Rd_decoded;
-    assign shift_type_out_idex = shift_type_decoded; // Pass shift type
-    assign shift_amt_out_idex = shift_amt_decoded;   // Pass shift amount
-
-    // Control signals to ID/EX pipeline register
-    assign reg_write_en_out_idex = reg_write_en_ctrl;
-    assign mem_read_en_out_idex = mem_read_en_ctrl;
-    assign mem_write_en_out_idex = mem_write_en_ctrl;
-    assign alu_src_out_idex = alu_src_ctrl;
-    assign alu_op_out_idex = alu_op_ctrl;
-    assign alu_invert_rm_out_idex = alu_invert_rm_ctrl; // Pass invert Rm control
-    assign mem_to_reg_out_idex = mem_to_reg_ctrl;
-    assign branch_taken_out_idex = branch_taken_ctrl; // This will be refined
-    assign branch_target_addr_out_idex = branch_target_addr_ctrl;
-
 endmodule
